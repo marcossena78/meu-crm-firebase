@@ -1,0 +1,1663 @@
+<!DOCTYPE html>
+<html lang="pt-BR">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>CRM Souzacred</title>
+    <script src="https://cdn.tailwindcss.com"></script>
+    <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.4.0/css/all.min.css">
+    <!-- Chart.js -->
+    <script src="https://cdn.jsdelivr.net/npm/chart.js"></script>
+    <!-- Firebase SDK -->
+    <script src="https://www.gstatic.com/firebasejs/9.22.0/firebase-app.js" type="module"></script>
+    <script src="https://www.gstatic.com/firebasejs/9.22.0/firebase-auth.js" type="module"></script>
+    <script src="https://www.gstatic.com/firebasejs/9.22.0/firebase-functions.js" type="module"></script>
+    
+    <!-- IMPORTAR Firestore SDK (necessário para a função formatDate, se ela precisar lidar diretamente com Timestamps do Firestore) -->
+    <!-- Embora a sua versão atual de formatDate use new Date(timestamp.seconds * 1000), importar o SDK pode ser útil se outras partes precisarem. -->
+    <!-- <script src="https://www.gstatic.com/firebasejs/9.22.0/firebase-firestore.js" type="module"></script> -->
+
+    <style>
+        .sidebar {
+            transition: all 0.3s;
+        }
+        .sidebar.collapsed {
+            width: 70px;
+        }
+        .sidebar.collapsed .sidebar-text {
+            display: none;
+        }
+        .sidebar.collapsed .logo-text {
+            display: none;
+        }
+        .sidebar.collapsed .nav-item {
+            justify-content: center;
+        }
+        .nav-item.active {
+            background-color: #2563eb; /* bg-blue-700 */
+            color: white;
+        }
+        .nav-item.active i {
+            color: white;
+        }
+        .content {
+            transition: all 0.3s;
+        }
+        /* Ajusta a margem do conteúdo principal quando a sidebar está recolhida */
+        .sidebar.collapsed + .content {
+            margin-left: 70px; /* Equivalente a ml-16 em Tailwind */
+        }
+         /* Adiciona a margem inicial padrão para a sidebar expandida */
+        .content {
+             margin-left: 16rem; /* Equivalente a ml-64 em Tailwind */
+        }
+
+
+        /* Estilo para o funil de vendas */
+        .funnel-container {
+            display: flex;
+            justify-content: space-between;
+            align-items: center;
+            flex-wrap: wrap; /* Permite quebrar linha em telas menores */
+             margin-bottom: 1.5rem; /* mb-6 */
+        }
+        .funnel-step {
+            position: relative;
+            flex-grow: 1; /* Faz cada passo ocupar o espaço disponível */
+             margin-right: 20px; /* Espaço maior entre os passos */
+             min-width: 100px; /* Largura mínima para não colapsar muito */
+             padding: 1rem; /* p-4 */
+             border-radius: 0.5rem; /* rounded-lg */
+             text-align: center;
+             background-color: #f3f4f6; /* bg-gray-100 padrão */
+             color: #4b5563; /* text-gray-700 padrão */
+             transition: background-color 0.3s, color 0.3s;
+             box-shadow: 0 1px 2px 0 rgba(0, 0, 0, 0.05); /* shadow-sm */
+        }
+         /* Remove a margem do último passo */
+        .funnel-step:last-child {
+             margin-right: 0;
+        }
+
+        /* Estilo para o passo ativo do funil */
+         .funnel-step.active {
+            background-color: #3b82f6; /* bg-blue-600 */
+            color: #ffffff; /* text-white */
+         }
+         .funnel-step.active .text-gray-500 { /* Garante que o texto da contagem mude de cor */
+             color: #e5e7eb; /* gray-200 */
+         }
+
+
+        /* Seta que conecta os passos */
+        .funnel-step:not(:last-child):after {
+            content: "";
+            position: absolute;
+            right: -20px; /* Ajuste a posição da seta para encaixar no espaço */
+            top: 50%;
+            transform: translateY(-50%);
+            width: 0;
+            height: 0;
+            border-top: 15px solid transparent; /* Ajuste o tamanho da seta */
+            border-bottom: 15px solid transparent; /* Ajuste o tamanho da seta */
+            border-left: 15px solid #e5e7eb; /* Cor da seta padrão (gray-200) */
+             z-index: 10; /* Garante que a seta fique acima do próximo passo */
+        }
+         /* Seta do passo ativo */
+        .funnel-step.active:not(:last-child):after {
+            border-left-color: #3b82f6; /* Cor da seta ativa (blue-600) */
+        }
+         /* Fundo dos passos para a seta "entrar" nele */
+         .funnel-step > div {
+             position: relative;
+             z-index: 20; /* Garante que o conteúdo do passo fique acima da seta anterior */
+         }
+
+
+        .client-card:hover {
+            transform: translateY(-2px);
+            box-shadow: 0 10px 15px -3px rgba(0, 0, 0, 0.1);
+        }
+        .chart-container {
+            height: 300px;
+        }
+        .dropdown:hover .dropdown-menu {
+            display: block;
+        }
+
+         /* Ajuste para telas menores */
+         @media (max-width: 768px) {
+             .funnel-container {
+                 flex-direction: column;
+                 align-items: stretch;
+             }
+             .funnel-step {
+                 margin-right: 0;
+                 margin-bottom: 15px; /* Espaço entre os passos empilhados */
+                 min-width: auto; /* Remove largura mínima em telas pequenas */
+             }
+             .funnel-step:not(:last-child):after {
+                 display: none; /* Oculta as setas em telas pequenas */
+             }
+         }
+    </style>
+</head>
+<body class="bg-gray-100 font-sans">
+    <div class="flex h-screen overflow-hidden">
+        <!-- Sidebar -->
+        <div class="sidebar bg-white text-gray-800 shadow-lg flex flex-col w-64">
+            <!-- Logo -->
+            <div class="p-4 flex items-center space-x-2 border-b border-gray-200">
+                <img src="logo.png" alt="Souzacred" class="h-10">
+                <span class="logo-text text-xl font-bold">CRM</span>
+            </div>
+            
+            <!-- User Profile -->
+            <div class="p-4 border-b border-gray-200 flex items-center space-x-3">
+                <div class="relative">
+                    <img id="userAvatar" src="https://randomuser.me/api/portraits/men/32.jpg" alt="User" class="w-10 h-10 rounded-full">
+                    <span class="absolute bottom-0 right-0 w-3 h-3 bg-green-500 rounded-full border-2 border-white"></span>
+                </div>
+                <div class="sidebar-text">
+                    <p id="userName" class="font-medium">Carregando...</p>
+                    <p id="userRole" class="text-xs text-gray-500">...</p> <!-- Corrigido para mostrar '...' inicialmente -->
+                </div>
+            </div>
+            
+            <!-- Navigation -->
+            <nav class="flex-1 overflow-y-auto">
+                <ul class="space-y-1 p-2">
+                    <li>
+                         <!-- Link placeholder -->
+                        <a href="#" class="nav-item flex items-center space-x-3 p-3 rounded-lg bg-blue-50 text-blue-600">
+                            <i class="fas fa-tachometer-alt text-blue-600"></i>
+                            <span class="sidebar-text">Dashboard</span>
+                        </a>
+                    </li>
+                    <li>
+                         <!-- Link placeholder -->
+                        <a href="#" class="nav-item flex items-center space-x-3 p-3 rounded-lg hover:bg-gray-100">
+                            <i class="fas fa-users"></i>
+                            <span class="sidebar-text">Clientes</span>
+                        </a>
+                    </li>
+                    <li>
+                         <!-- Link placeholder -->
+                        <a href="#" class="nav-item flex items-center space-x-3 p-3 rounded-lg hover:bg-gray-100">
+                            <i class="fas fa-file-invoice-dollar"></i>
+                            <span class="sidebar-text">Empréstimos</span>
+                        </a>
+                    </li>
+                    <li>
+                         <!-- Link placeholder -->
+                        <a href="#" class="nav-item flex items-center space-x-3 p-3 rounded-lg hover:bg-gray-100">
+                            <i class="fas fa-calendar-alt"></i>
+                            <span class="sidebar-text">Agendamentos</span>
+                        </a>
+                    </li>
+                    <li>
+                         <!-- Link placeholder -->
+                        <a href="#" class="nav-item flex items-center space-x-3 p-3 rounded-lg hover:bg-gray-100">
+                            <i class="fas fa-chart-line"></i>
+                            <span class="sidebar-text">Relatórios</span>
+                        </a>
+                    </li>
+                    <li id="adminSettings" class="hidden">
+                         <!-- Link placeholder -->
+                        <a href="#" class="nav-item flex items-center space-x-3 p-3 rounded-lg hover:bg-gray-100">
+                            <i class="fas fa-cog"></i>
+                            <span class="sidebar-text">Configurações</span>
+                        </a>
+                    </li>
+                </ul>
+            </nav>
+            
+            <!-- Collapse Button -->
+            <div class="p-4 border-t border-gray-200">
+    :start_line:210
+    -------
+                <button id="sidebarToggle" class="flex items-center space-x-3 text-gray-600 hover:text-gray-900">
+                    <i id="sidebarToggleIcon" class="fas fa-chevron-left"></i>
+                    <span id="sidebarToggleText" class="sidebar-text">Recolher</span>
+                </button>
+            </div>
+        </div>
+        
+        <!-- Main Content -->
+        <div class="content flex-1 overflow-y-auto"> <!-- Removida a classe ml-64 fixa daqui para ser controlada pelo JS e CSS -->
+            <!-- Header -->
+            <header class="bg-white shadow-sm p-4 flex justify-between items-center">
+                <h1 class="text-2xl font-bold text-gray-800">Dashboard</h1>
+                <div class="flex items-center space-x-4">
+                    <div class="relative">
+                        <button class="p-2 rounded-full hover:bg-gray-100">
+                            <i class="fas fa-bell text-gray-600"></i>
+                            <span id="notificationBadge" class="absolute top-0 right-0 w-2 h-2 bg-red-500 rounded-full hidden"></span>
+                        </button>
+                    </div>
+                    <div class="dropdown relative">
+                        <button class="flex items-center space-x-2">
+                            <span id="headerUserName" class="text-gray-700">Carregando...</span>
+                            <img id="headerUserAvatar" src="https://randomuser.me/api/portraits/men/32.jpg" alt="User" class="w-8 h-8 rounded-full">
+                        </button>
+                        <div class="dropdown-menu absolute right-0 mt-2 w-48 bg-white rounded-md shadow-lg py-1 z-10 hidden">
+                             <!-- Link placeholder -->
+                            <a href="#" class="block px-4 py-2 text-sm text-gray-700 hover:bg-gray-100">Perfil</a>
+                            <div id="adminSettingsDropdown" class="hidden">
+                                 <!-- Link placeholder -->
+                                <a href="#" class="block px-4 py-2 text-sm text-gray-700 hover:bg-gray-100">Configurações</a>
+                            </div>
+                            <div class="border-t border-gray-200"></div>
+                             <!-- Link para logout -->
+                            <a href="#" onclick="logout()" class="block px-4 py-2 text-sm text-red-600 hover:bg-gray-100">Sair</a>
+                        </div>
+                    </div>
+                </div>
+            </header>
+            
+            <!-- Main Content Area -->
+            <main class="p-6">
+                <!-- Stats Cards -->
+                <!-- Estes cards chamarão a CF 'obterMetricasDashboard' (que precisa ser implementada) ou usarão mock data -->
+                <div class="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-6 mb-6">
+
+                    <!-- CARD 1: Clientes Ativos -->
+                    <div class="bg-white p-6 rounded-lg shadow">
+                        <div class="flex items-center justify-between">
+                            <div>
+                                <p class="text-gray-500">Clientes Ativos</p>
+                                <h3 id="activeClientsCount" class="text-2xl font-bold">Carregando...</h3>
+                                <p id="clientsGrowth" class="text-sm">...</p>
+                            </div>
+                            <div class="bg-blue-100 p-3 rounded-full">
+                                <i class="fas fa-users text-blue-600 text-xl"></i>
+                            </div>
+                        </div>
+                    </div>
+
+                    <!-- CARD 2: Empréstimos Ativos -->
+                    <div class="bg-white p-6 rounded-lg shadow">
+                        <div class="flex items-center justify-between">
+                            <div>
+                                <p class="text-gray-500">Empréstimos Ativos</p>
+                                <h3 id="activeLoansCount" class="text-2xl font-bold">Carregando...</h3>
+                                <p id="loansGrowth" class="text-sm">...</p>
+                            </div>
+                            <div class="bg-green-100 p-3 rounded-full">
+                                <i class="fas fa-file-invoice-dollar text-green-600 text-xl"></i>
+                            </div>
+                        </div>
+                    </div>
+
+                    <!-- CARD 3: Valor Emprestado -->
+                    <div class="bg-white p-6 rounded-lg shadow">
+                        <div class="flex items-center justify-between">
+                            <div>
+                                <p class="text-gray-500">Valor Emprestado</p>
+                                <h3 id="totalLoansValue" class="text-2xl font-bold">Carregando...</h3>
+                                <p id="valueGrowth" class="text-sm">...</p>
+                            </div>
+                            <div class="bg-purple-100 p-3 rounded-full">
+                                <i class="fas fa-money-bill-wave text-purple-600 text-xl"></i>
+                            </div>
+                        </div>
+                    </div>
+
+                    <!-- CARD 4: Taxa de Conversão -->
+                    <div class="bg-white p-6 rounded-lg shadow">
+                        <div class="flex items-center justify-between">
+                            <div>
+                                <p class="text-gray-500">Taxa de Conversão</p>
+                                <h3 id="conversionRate" class="text-2xl font-bold">Carregando...</h3>
+                                <p id="conversionChange" class="text-sm">...</p>
+                            </div>
+                            <div class="bg-yellow-100 p-3 rounded-full">
+                                <i class="fas fa-chart-pie text-yellow-600 text-xl"></i>
+                            </div>
+                        </div>
+                    </div>
+
+                </div>
+                
+                <!-- Funnel and Recent Activity -->
+                <div class="grid grid-cols-1 lg:grid-cols-3 gap-6 mb-6">
+                    <!-- Sales Funnel -->
+                    <div class="bg-white p-6 rounded-lg shadow lg:col-span-2">
+                        <div class="flex justify-between items-center mb-4">
+                            <h2 class="text-lg font-semibold">Funil de Vendas</h2>
+                            <select id="funnelPeriod" class="border border-gray-300 rounded-md px-3 py-1 text-sm" onchange="loadFunnelData()">
+                                <option value="7">Últimos 7 dias</option>
+                                <option value="30" selected>Últimos 30 dias</option>
+                                <option value="90">Últimos 90 dias</option>
+                            </select>
+                        </div>
+                        
+                        <div class="flex justify-between items-center mb-6">
+                            <div id="funnelStep1" class="funnel-step active px-4 py-2 bg-blue-500 text-white rounded-lg text-center">
+                                <p class="font-medium">Oportunidade</p>
+                                <p id="funnelCount1" class="text-sm">0</p>
+                            </div>
+                            <div id="funnelStep2" class="funnel-step px-4 py-2 bg-gray-100 rounded-lg text-center">
+                                <p class="font-medium">Contato Inicial</p>
+                                <p id="funnelCount2" class="text-sm">0</p>
+                            </div>
+                            <div id="funnelStep3" class="funnel-step px-4 py-2 bg-gray-100 rounded-lg text-center">
+                                <p class="font-medium">Proposta Enviada</p>
+                                <p id="funnelCount3" class="text-sm">0</p>
+                            </div>
+                            <div id="funnelStep4" class="funnel-step px-4 py-2 bg-gray-100 rounded-lg text-center">
+                                <p class="font-medium">Negociação</p>
+                                <p id="funnelCount4" class="text-sm">0</p>
+                            </div>
+                            <div id="funnelStep5" class="funnel-step px-4 py-2 bg-gray-100 rounded-lg text-center">
+                                <p class="font-medium">Fechado</p>
+                                <p id="funnelCount5" class="text-sm">0</p>
+                            </div>
+                        </div>
+                        
+                        <div class="chart-container">
+                            <canvas id="funnelChart"></canvas>
+                        </div>
+                    </div>
+                    
+                    <!-- Recent Activity -->
+                    <div class="bg-white p-6 rounded-lg shadow">
+                        <div class="flex justify-between items-center mb-4">
+                            <h2 class="text-lg font-semibold">Atividade Recente</h2>
+                            <button class="text-blue-600 text-sm">Ver tudo</button>
+                        </div>
+                        
+                        <div id="recentActivity" class="space-y-4">
+                            <div class="text-center py-4">
+                                <i class="fas fa-spinner fa-spin text-gray-400"></i>
+                                <p class="text-gray-500 mt-2">Carregando atividades...</p>
+                            </div>
+                        </div>
+                    </div>
+                </div>
+                
+                <!-- Recent Clients and Performance -->
+                <div class="grid grid-cols-1 lg:grid-cols-3 gap-6">
+                    <!-- Recent Clients -->
+                    <div class="bg-white p-6 rounded-lg shadow lg:col-span-2">
+                        <div class="flex justify-between items-center mb-4">
+                            <h2 class="text-lg font-semibold">Clientes Recentes</h2>
+                            <button class="text-blue-600 text-sm">Ver todos</button>
+                        </div>
+                        
+                        <div class="overflow-x-auto">
+                            <table class="min-w-full divide-y divide-gray-200">
+                                <thead class="bg-gray-50">
+                                    <tr>
+                                        <th class="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">Cliente</th>
+                                        <th class="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">Etapa</th>
+                                        <th class="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">Último Contato</th>
+                                        <th class="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">Ações</th>
+                                    </tr>
+                                </thead>
+                                <tbody id="recentClientsList" class="bg-white divide-y divide-gray-200">
+                                    <tr>
+                                        <td colspan="4" class="px-6 py-4 text-center">
+                                            <i class="fas fa-spinner fa-spin text-gray-400"></i>
+                                            <p class="text-gray-500 mt-2">Carregando clientes...</p>
+                                        </td>
+                                    </tr>
+                                </tbody>
+                            </table>
+                        </div>
+                    </div>
+                    
+                    <!-- Performance -->
+                    <div class="bg-white p-6 rounded-lg shadow">
+                        <div class="flex justify-between items-center mb-4">
+                            <h2 class="text-lg font-semibold">Desempenho</h2>
+                            <select id="performancePeriod" class="border border-gray-300 rounded-md px-3 py-1 text-sm" onchange="loadPerformanceData()">
+                                <option value="7">7 dias</option>
+                                <option value="30" selected>30 dias</option>
+                                <option value="90">90 dias</option>
+                            </select>
+                        </div>
+                        
+                        <div class="chart-container">
+                            <canvas id="performanceChart"></canvas>
+                        </div>
+                        
+                        <div class="mt-4">
+                            <div class="flex justify-between items-center mb-2">
+                                <span class="text-sm text-gray-500">Meta Mensal</span>
+                                <span id="monthlyGoal" class="text-sm font-medium">R$ 500.000</span>
+                            </div>
+                            <div class="w-full bg-gray-200 rounded-full h-2.5">
+                                <div id="goalProgress" class="bg-blue-600 h-2.5 rounded-full" style="width: 45%"></div>
+                            </div>
+                            <div class="flex justify-between items-center mt-1">
+                                <span id="currentProgress" class="text-xs text-gray-500">R$ 225.000 (45%)</span>
+                                <span id="daysRemaining" class="text-xs text-gray-500">15 dias restantes</span>
+                            </div>
+                        </div>
+                    </div>
+                </div>
+            </main>
+        </div>
+    </div>
+    
+    <!-- Client Details Modal -->
+    <div id="clientDetailsModal" class="fixed inset-0 bg-black bg-opacity-50 flex items-center justify-center z-50 hidden">
+        <div class="bg-white rounded-lg shadow-xl w-full max-w-4xl max-h-screen overflow-y-auto">
+            <div class="p-6">
+                <div class="flex justify-between items-center mb-6">
+                    <h3 class="text-xl font-bold">Detalhes do Cliente</h3>
+                    <button onclick="hideClientDetails()" class="text-gray-500 hover:text-gray-700">
+                        <i class="fas fa-times"></i>
+                    </button>
+                </div>
+                
+                <div id="clientDetailsContent">
+                    <div class="text-center py-8">
+                        <i class="fas fa-spinner fa-spin text-gray-400 text-2xl"></i>
+                        <p class="text-gray-500 mt-4">Carregando detalhes do cliente...</p>
+                    </div>
+                </div>
+            </div>
+        </div>
+    </div>
+    
+    <script type="module">
+        // Import the functions you need from the SDKs you need
+        import { initializeApp } from "https://www.gstatic.com/firebasejs/9.22.0/firebase-app.js";
+        import { getAnalytics } from "https://www.gstatic.com/firebasejs/9.22.0/firebase-analytics.js";
+        import { getAuth, onAuthStateChanged, signOut } from "https://www.gstatic.com/firebasejs/9.22.0/firebase-auth.js";
+        import { getFunctions, httpsCallable } from "https://www.gstatic.com/firebasejs/9.22.0/firebase-functions.js";
+        
+        // Your web app's Firebase configuration
+        const firebaseConfig = {
+            apiKey: "YOAIzaSyCuaL09kIovFZ-WTzZg1MPllIBl1diCx7c",
+            authDomain: "crm-com-api.firebaseapp.com",
+            projectId: "crm-com-api",
+            storageBucket: "crm-com-api.firebasestorage.app",
+            messagingSenderId: "63819170275",
+            appId: "1:63819170275:web:b0d9e21d2352fd3a8260d6",
+            measurementId: "G-KQZ2J7WN21"
+        };
+        
+        // Initialize Firebase
+        const app = initializeApp(firebaseConfig);
+        const analytics = getAnalytics(app);
+        const auth = getAuth(app);
+        const functions = getFunctions(app);
+        
+        // Global variables
+        let currentUser = null;
+        let currentUserData = null;
+        let funnelChart = null;
+        let performanceChart = null;
+        
+        // Toggle sidebar
+        window.toggleSidebar = function() {
+            const sidebar = document.querySelector('.sidebar');
+            const content = document.querySelector('.content');
+            
+            sidebar.classList.toggle('collapsed');
+            
+            if (sidebar.classList.contains('collapsed')) {
+                content.style.marginLeft = '70px';
+            } else {
+                content.style.marginLeft = '16rem';
+            }
+        };
+        
+        // Logout function
+        window.logout = function() {
+            signOut(auth).then(() => {
+                window.location.href = 'login.html';
+            }).catch((error) => {
+                console.error('Error signing out:', error);
+            });
+        };
+        
+        // Show client details
+        window.showClientDetails = function(clientId) {
+            const modal = document.getElementById('clientDetailsModal');
+            const content = document.getElementById('clientDetailsContent');
+            
+            // Show loading state
+            modal.classList.remove('hidden');
+            content.innerHTML = `
+                <div class="text-center py-8">
+                    <i class="fas fa-spinner fa-spin text-gray-400 text-2xl"></i>
+                    <p class="text-gray-500 mt-4">Carregando detalhes do cliente...</p>
+                </div>
+            `;
+            
+            // Chama a Cloud Function para obter detalhes reais do cliente
+            import('https://www.gstatic.com/firebasejs/9.22.0/firebase-functions.js').then(({ getFunctions, httpsCallable }) => {
+                const functions = getFunctions();
+                const obterDetalhesCliente = httpsCallable(functions, 'obterDetalhesCliente');
+                obterDetalhesCliente({ clienteId })
+                    .then(result => {
+                        const c = result.data;
+                        content.innerHTML = `
+                            <div class="py-4">
+                                <h2 class="text-xl font-bold mb-2">${c.nomeCompleto || 'Sem nome'}</h2>
+                                <div class="mb-2 text-gray-700"><b>CPF:</b> ${c.cpf || '-'}</div>
+                                <div class="mb-2 text-gray-700"><b>Telefone:</b> ${c.telefone || '-'}</div>
+                                <div class="mb-2 text-gray-700"><b>WhatsApp:</b> ${c.telefoneWhatsapp || '-'}</div>
+                                <div class="mb-2 text-gray-700"><b>Endereço:</b> ${c.enderecoCompleto || '-'}</div>
+                                <div class="mb-2 text-gray-700"><b>Benefício:</b> ${c.beneficioMatricula || '-'}</div>
+                                <div class="mb-2 text-gray-700"><b>Etapa do Funil:</b> ${c.etapaFunil || '-'}</div>
+                                <div class="mb-2 text-gray-700"><b>Data de Criação:</b> ${c.dataCriacao && c.dataCriacao.seconds ? new Date(c.dataCriacao.seconds * 1000).toLocaleDateString('pt-BR') : '-'}</div>
+                                <hr class="my-3">
+                                <h3 class="font-semibold mb-1">Empréstimos</h3>
+                                <ul class="mb-2">
+                                    ${(c.emprestimos && c.emprestimos.length > 0) ? c.emprestimos.map(e => `
+                                        <li class="mb-1 border-b pb-1">
+                                            <b>Valor:</b> R$ ${e.valor?.toLocaleString('pt-BR', {minimumFractionDigits:2}) || '-'}<br>
+                                            <b>Status:</b> ${e.status || '-'}<br>
+                                            <b>Parcelas:</b> ${e.parcelas || '-'}<br>
+                                            <b>Taxa:</b> ${e.taxaJuros || '-'}%<br>
+                                            <b>Solicitação:</b> ${e.dataSolicitacao && e.dataSolicitacao.seconds ? new Date(e.dataSolicitacao.seconds * 1000).toLocaleDateString('pt-BR') : '-'}
+                                        </li>
+                                    `).join('') : '<li class="text-gray-400">Nenhum empréstimo</li>'}
+                                </ul>
+                                <h3 class="font-semibold mb-1">Histórico</h3>
+                                <ul>
+                                    ${(c.historico && c.historico.length > 0) ? c.historico.map(h => `
+                                        <li class="mb-1 border-b pb-1">
+                                            <b>Data:</b> ${h.data && h.data.seconds ? new Date(h.data.seconds * 1000).toLocaleDateString('pt-BR') : '-'}<br>
+                                            <b>Tipo:</b> ${h.tipo || '-'}<br>
+                                            <b>Descrição:</b> ${h.descricao || '-'}
+                                        </li>
+                                    `).join('') : '<li class="text-gray-400">Nenhum histórico</li>'}
+                                </ul>
+                            </div>
+                        `;
+                    })
+                    .catch(error => {
+                        content.innerHTML = `
+                            <div class="text-center py-8">
+                                <i class="fas fa-exclamation-triangle text-red-400 text-2xl"></i>
+                                <p class="text-gray-500 mt-4">Erro ao carregar detalhes do cliente.</p>
+                                <p class="text-sm text-gray-400 mt-2">${error.message || ''}</p>
+                            </div>
+                        `;
+                    });
+            });
+        };
+
+        // Close client details modal
+        window.closeClientDetails = function() {
+            document.getElementById('clientDetailsModal').classList.add('hidden');
+        };
+
+        // Load funnel data using real backend function
+        async function loadFunnelData() {
+            try {
+                // Call backend function to get funnel data by stage
+                const listarClientesPorEtapa = httpsCallable(functions, 'listarClientesPorEtapa');
+                
+                const etapas = ['oportunidade', 'contato_inicial', 'proposta_enviada', 'negociacao', 'fechado_ganho'];
+                const counts = [];
+                
+                // Get count for each funnel stage
+                for (let i = 0; i < etapas.length; i++) {
+                    try {
+                        const result = await listarClientesPorEtapa({
+                            etapaFunil: etapas[i],
+                            limite: 1 // We only need the count, not the actual data
+                        });
+                        
+                        // Get total count from meta information
+                        const totalCount = result.data?.meta?.total || 0;
+                        counts.push(totalCount);
+                    } catch (error) {
+                        console.error(`Error loading count for stage ${etapas[i]}:`, error);
+                        counts.push(0);
+                    }
+                }
+                
+                // Update UI with real counts
+                document.getElementById('funnelCount1').textContent = counts[0] || 0;
+                document.getElementById('funnelCount2').textContent = counts[1] || 0;
+                document.getElementById('funnelCount3').textContent = counts[2] || 0;
+                document.getElementById('funnelCount4').textContent = counts[3] || 0;
+                document.getElementById('funnelCount5').textContent = counts[4] || 0;
+                
+                // Update chart if it exists
+                if (typeof funnelChart !== 'undefined') {
+                    funnelChart.data.datasets[0].data = counts;
+                    funnelChart.update();
+                }
+                
+                // Highlight active step (first step by default)
+                highlightFunnelStep(1);
+            } catch (error) {
+                console.error('Error loading funnel data:', error);
+                // Show error state
+                for (let i = 1; i <= 5; i++) {
+                    document.getElementById(`funnelCount${i}`).textContent = 'Erro';
+                }
+            }
+        }
+
+        // Load stats (clients, loans, etc.)
+        async function loadStats() {
+            try {
+                // Call the backend function to get dashboard metrics
+                const getDashboardMetrics = httpsCallable(functions, 'obterMetricasDashboard');
+                const result = await getDashboardMetrics();
+                
+                if (result.data) {
+                    const metrics = result.data;
+                    
+                    // Update UI with real data
+                    document.getElementById('activeClientsCount').textContent = metrics.clientesAtivos.toLocaleString();
+                    document.getElementById('activeLoansCount').textContent = metrics.emprestimosAtivos.toLocaleString();
+                    document.getElementById('totalLoansValue').textContent = `R$ ${(metrics.valorTotalEmprestado / 1000000).toFixed(1)}M`;
+                    document.getElementById('conversionRate').textContent = `${metrics.taxaConversao}%`;
+                    
+                    // Note: Growth percentages and changes need to be calculated in backend
+                    // For now, show static text indicating this needs implementation
+                    document.getElementById('clientsGrowth').textContent = 'Crescimento requer implementação';
+                    document.getElementById('loansGrowth').textContent = 'Crescimento requer implementação';
+                    document.getElementById('valueGrowth').textContent = 'Crescimento requer implementação';
+                    document.getElementById('conversionChange').textContent = 'Mudança requer implementação';
+                }
+            } catch (error) {
+                console.error('Error loading stats:', error);
+                // Remove fallback to mock data to enforce real data usage
+                // Show error message to user
+                document.getElementById('activeClientsCount').textContent = 'Erro';
+                document.getElementById('clientsGrowth').textContent = 'Erro ao carregar dados';
+                document.getElementById('activeLoansCount').textContent = 'Erro';
+                document.getElementById('loansGrowth').textContent = 'Erro ao carregar dados';
+                document.getElementById('totalLoansValue').textContent = 'Erro';
+                document.getElementById('valueGrowth').textContent = 'Erro ao carregar dados';
+                document.getElementById('conversionRate').textContent = 'Erro';
+                document.getElementById('conversionChange').textContent = 'Erro ao carregar dados';
+            }
+        }
+
+        // Load funnel data
+        async function loadFunnelData() {
+            try {
+                // Call backend function to get funnel data by stage
+                // TODO: Implement backend function for funnel data
+                const counts = [0, 0, 0, 0, 0]; // Placeholder
+                
+                document.getElementById('funnelCount1').textContent = counts[0];
+                document.getElementById('funnelCount2').textContent = counts[1];
+                document.getElementById('funnelCount3').textContent = counts[2];
+                document.getElementById('funnelCount4').textContent = counts[3];
+                document.getElementById('funnelCount5').textContent = counts[4];
+                
+                // Update chart
+                if (typeof funnelChart !== 'undefined') {
+                    funnelChart.data.datasets[0].data = counts;
+                    funnelChart.update();
+                }
+                
+                // Highlight active step (first step by default)
+                highlightFunnelStep(1);
+            } catch (error) {
+                console.error('Error loading funnel data:', error);
+            }
+        }
+
+        // Load recent activity
+        async function loadRecentActivity() {
+            try {
+                // Chama a Cloud Function para obter atividades reais
+                const container = document.getElementById('recentActivity');
+                container.innerHTML = '<div class="text-gray-400 text-center py-2">Carregando...</div>';
+                try {
+                    const obterAtividadesRecentes = firebase.functions().httpsCallable('obterAtividadesRecentes');
+                    const result = await obterAtividadesRecentes();
+                    const activities = result.data && result.data.atividades ? result.data.atividades : [];
+                    if (activities.length === 0) {
+                        container.innerHTML = '<div class="text-gray-400 text-center py-2">Nenhuma atividade recente</div>';
+                        return;
+                    }
+                    container.innerHTML = '';
+                    activities.forEach(activity => {
+                        const div = document.createElement('div');
+                        div.className = 'mb-2 p-2 bg-white rounded shadow text-sm';
+                        div.innerHTML = `
+                            <div class="font-semibold">${activity.titulo || activity.tipo || 'Atividade'}</div>
+                            <div class="text-gray-600">${activity.descricao || ''}</div>
+                            <div class="text-xs text-gray-400">${activity.data && activity.data.seconds ? new Date(activity.data.seconds * 1000).toLocaleString('pt-BR') : ''}</div>
+                        `;
+                        container.appendChild(div);
+                    });
+                } catch (error) {
+                    container.innerHTML = '<div class="text-red-500 text-center py-2">Erro ao carregar atividades</div>';
+                }
+                return;
+                
+            } catch (error) {
+                console.error('Error loading recent activity:', error);
+            }
+        }
+
+        // Load recent clients
+        async function loadRecentClients() {
+            try {
+                // Call the backend function to get recent clients
+                const listarClientes = httpsCallable(functions, 'listarClientes');
+                const result = await listarClientes({ limite: 5 });
+                
+                // Get clients from result
+                const clients = result.data && result.data.data ? result.data.data : [];
+                
+                // Update UI
+                const container = document.getElementById('recentClientsList');
+                container.innerHTML = '';
+                
+                if (clients.length === 0) {
+                    const row = document.createElement('tr');
+                    row.innerHTML = `
+                        <td colspan="4" class="px-6 py-4 text-center text-gray-500">
+                            Nenhum cliente recente encontrado.
+                        </td>
+                    `;
+                    container.appendChild(row);
+                    return;
+                }
+                
+                clients.forEach(client => {
+                    const row = document.createElement('tr');
+                    
+                    // Convert Firestore timestamps to Date objects
+                    const dataCriacao = client.dataCriacao ? new Date(client.dataCriacao.seconds * 1000) : null;
+                    const ultimaAtualizacao = client.ultimaAtualizacaoPrazo ? new Date(client.ultimaAtualizacaoPrazo.seconds * 1000) : null;
+                    
+                    row.innerHTML = `
+                        <td class="px-6 py-4 whitespace-nowrap">
+                            <div class="flex items-center">
+                                <div class="flex-shrink-0 h-10 w-10">
+                                    <img class="h-10 w-10 rounded-full" src="https://randomuser.me/api/portraits/${client.genero === 'F' ? 'women' : 'men'}/${Math.floor(Math.random() * 50)}.jpg" alt="">
+                                </div>
+                                <div class="ml-4">
+                                    <div class="text-sm font-medium text-gray-900">${client.nomeCompleto}</div>
+                                    <div class="text-sm text-gray-500">${client.telefone || 'Sem telefone'}</div>
+                                </div>
+                            </div>
+                        </td>
+                        <td class="px-6 py-4 whitespace-nowrap">
+                            ${getFunnelStepBadge(client.etapaFunil)}
+                        </td>
+                        <td class="px-6 py-4 whitespace-nowrap text-sm text-gray-500">
+                            ${formatDate(ultimaAtualizacao || dataCriacao)}
+                        </td>
+                        <td class="px-6 py-4 whitespace-nowrap text-sm font-medium">
+                            <button class="text-blue-600 hover:text-blue-900 mr-3" title="Ligar para ${client.nomeCompleto}" ${client.telefone ? `onclick="window.location.href = 'tel:${client.telefone.replace(/\D/g, '')}'"` : 'disabled'}><i class="fas fa-phone"></i></button>
+                            <button class="text-green-600 hover:text-green-900 mr-3" title="Enviar WhatsApp para ${client.nomeCompleto}" ${client.telefoneWhatsapp ? `onclick="window.open('https://wa.me/${client.telefoneWhatsapp.replace(/\D/g, '')}', '_blank')"` : 'disabled'}><i class="fab fa-whatsapp"></i></button>
+                            <button onclick="showClientDetails('${client.id}')" class="text-purple-600 hover:text-purple-900" title="Ver detalhes de ${client.nomeCompleto}"><i class="fas fa-ellipsis-v"></i></button>
+                        </td>
+                    `;
+                    container.appendChild(row);
+                });
+            } catch (error) {
+                console.error('Error loading recent clients:', error);
+                // Show error message instead of fallback to mock data
+                const errorContainer = document.getElementById('recentClientsList');
+                errorContainer.innerHTML = `
+                    <tr>
+                        <td colspan="4" class="px-6 py-4 text-center text-red-500">
+                            Erro ao carregar clientes recentes
+                        </td>
+                    </tr>
+                `;
+            }
+        }
+
+        // Get funnel step badge HTML
+        function getFunnelStepBadge(etapa) {
+            const steps = {
+                'oportunidade': { text: 'Oportunidade', color: 'blue' },
+                'contato_inicial': { text: 'Contato Inicial', color: 'yellow' },
+                'proposta_enviada': { text: 'Proposta Enviada', color: 'purple' },
+                'negociacao': { text: 'Negociação', color: 'orange' },
+                'fechado_ganho': { text: 'Fechado Ganho', color: 'green' },
+                'fechado_perdido': { text: 'Fechado Perdido', color: 'red' }
+            };
+            
+            const step = steps[etapa] || { text: 'Desconhecido', color: 'gray' };
+            return `<span class="px-2 inline-flex text-xs leading-5 font-semibold rounded-full bg-${step.color}-100 text-${step.color}-800">${step.text}</span>`;
+        }
+
+        // Format date helper
+        function formatDate(date) {
+            if (!date) return 'N/A';
+            if (typeof date === 'object' && date.seconds) {
+                // Firestore timestamp
+                date = new Date(date.seconds * 1000);
+            }
+            return date.toLocaleDateString('pt-BR');
+        }
+
+        // Load performance data
+        async function loadPerformanceData() {
+            const period = document.getElementById('performancePeriod').value;
+            
+            try {
+                // Chama a Cloud Function para obter dados reais de performance
+                const obterDadosPerformance = firebase.functions().httpsCallable('obterDadosPerformance');
+                const result = await obterDadosPerformance({ periodo: period });
+                const data = result.data;
+
+                // Atualiza o gráfico
+                if (typeof performanceChart !== 'undefined') {
+                    performanceChart.data.labels = data.labels;
+                    performanceChart.data.datasets[0].data = data.valores;
+                    performanceChart.update();
+                }
+
+                // Atualiza indicadores
+                document.getElementById('monthlyGoal').textContent = `R$ ${data.meta.toLocaleString('pt-BR')}`;
+                document.getElementById('currentProgress').textContent = `R$ ${data.progresso.toLocaleString('pt-BR')} (${Math.round((data.progresso/data.meta)*100)}%)`;
+
+                // Calcula dias restantes no mês
+                const today = new Date();
+                const lastDay = new Date(today.getFullYear(), today.getMonth() + 1, 0).getDate();
+                const daysRemaining = lastDay - today.getDate();
+                document.getElementById('daysRemaining').textContent = `${daysRemaining} dias restantes`;
+            } catch (error) {
+                console.error('Error loading performance data:', error);
+            }
+        }
+
+        // Load dashboard metrics from backend
+        async function loadDashboardMetrics() {
+            try {
+                const obterMetricasDashboard = httpsCallable(functions, 'obterMetricasDashboard');
+                const result = await obterMetricasDashboard();
+                const data = result.data;
+
+                document.getElementById('activeClientsCount').textContent = data.clientesAtivos;
+                document.getElementById('activeLoansCount').textContent = data.emprestimosAtivos;
+                document.getElementById('totalLoansValue').textContent = `R$ ${data.valorTotalEmprestado.toLocaleString('pt-BR', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}`;
+                document.getElementById('conversionRate').textContent = `${data.taxaConversao}%`;
+            } catch (error) {
+                console.error('Erro ao carregar métricas do dashboard:', error);
+            }
+        }
+
+        // Inicializar dados ao carregar a página
+        window.addEventListener('load', () => {
+            loadDashboardMetrics();
+            loadPerformanceData();
+            // Outras funções de inicialização podem ser chamadas aqui
+        });
+    </script>
+    <script type="module">
+        // Marca o item ativo da sidebar baseado na URL (simulação)
+        function setActiveNavItem() {
+            const navItems = document.querySelectorAll('.nav-item');
+            navItems.forEach(item => {
+                item.classList.remove('active');
+            });
+            // Exemplo: marcar o primeiro item como ativo (Dashboard)
+            if (navItems.length > 0) {
+                navItems[0].classList.add('active');
+            }
+        }
+
+        // Atualiza o botão de recolher sidebar para alternar ícone e texto
+        function updateSidebarToggleButton() {
+            const sidebar = document.querySelector('.sidebar');
+            const icon = document.getElementById('sidebarToggleIcon');
+            const text = document.getElementById('sidebarToggleText');
+
+            if (sidebar.classList.contains('collapsed')) {
+                icon.classList.remove('fa-chevron-left');
+                icon.classList.add('fa-chevron-right');
+                text.textContent = 'Expandir';
+            } else {
+                icon.classList.remove('fa-chevron-right');
+                icon.classList.add('fa-chevron-left');
+                text.textContent = 'Recolher';
+            }
+        }
+
+        // Modifica a função toggleSidebar para atualizar o botão
+        window.toggleSidebar = function() {
+            const sidebar = document.querySelector('.sidebar');
+            const content = document.querySelector('.content');
+
+            sidebar.classList.toggle('collapsed');
+
+            if (sidebar.classList.contains('collapsed')) {
+                content.style.marginLeft = '70px';
+            } else {
+                content.style.marginLeft = '16rem';
+            }
+
+            updateSidebarToggleButton();
+        };
+
+        // Inicializar
+        setActiveNavItem();
+        updateSidebarToggleButton();
+    </script>
+</body>
+</html>
+                const client = {
+                    id: clientId,
+                    nomeCompleto: 'Ana Carolina Silva',
+                    cpf: '123.456.789-00',
+                    telefone: '(11) 98765-4321',
+                    telefoneWhatsapp: '(11) 98765-4321',
+                    enderecoCompleto: 'Rua das Flores, 123 - São Paulo, SP',
+                    beneficioMatricula: '987654321',
+                    etapaFunil: 'proposta_enviada',
+                    dataCriacao: new Date(2023, 5, 15),
+                    ultimaAtualizacaoPrazo: new Date(2023, 6, 10),
+                    emprestimos: [
+                        {
+                            id: 'emp1',
+                            valor: 15000,
+                            parcelas: 36,
+                            taxaJuros: 1.6,
+                            status: 'aprovado',
+                            dataSolicitacao: new Date(2023, 6, 5)
+                        }
+                    ],
+                    historico: [
+                        {
+                            data: new Date(2023, 5, 15),
+                            tipo: 'cadastro',
+                            descricao: 'Cliente cadastrado no sistema'
+                        },
+                        {
+                            data: new Date(2023, 5, 20),
+                            tipo: 'contato',
+                            descricao: 'Primeiro contato realizado por telefone'
+                        },
+                        {
+                            data: new Date(2023, 6, 2),
+                            tipo: 'proposta',
+                            descricao: 'Proposta de empréstimo enviada'
+                        },
+                        {
+                            data: new Date(2023, 6, 5),
+                            tipo: 'emprestimo',
+                            descricao: 'Solicitação de empréstimo de R$ 15.000'
+                        },
+                        {
+                            data: new Date(2023, 6, 10),
+                            tipo: 'aprovacao',
+                            descricao: 'Empréstimo aprovado'
+                        }
+                    ]
+                };
+                
+                // Update UI with client details
+                content.innerHTML = `
+                    <div class="grid grid-cols-1 md:grid-cols-2 gap-6">
+                        <div>
+                            <h4 class="text-lg font-semibold mb-4">Informações Pessoais</h4>
+                            <div class="space-y-3">
+                                <div>
+                                    <p class="text-sm text-gray-500">Nome Completo</p>
+                                    <p class="font-medium">${client.nomeCompleto}</p>
+                                </div>
+                                <div>
+                                    <p class="text-sm text-gray-500">CPF</p>
+                                    <p class="font-medium">${client.cpf}</p>
+                                </div>
+                                <div>
+                                    <p class="text-sm text-gray-500">Telefone</p>
+                                    <p class="font-medium">${client.telefone}</p>
+                                </div>
+                                <div>
+                                    <p class="text-sm text-gray-500">Endereço</p>
+                                    <p class="font-medium">${client.enderecoCompleto}</p>
+                                </div>
+                                <div>
+                                    <p class="text-sm text-gray-500">Matrícula do Benefício</p>
+                                    <p class="font-medium">${client.beneficioMatricula}</p>
+                                </div>
+                                <div>
+                                    <p class="text-sm text-gray-500">Etapa no Funil</p>
+                                    <p class="font-medium">${getFunnelStepBadge(client.etapaFunil)}</p>
+                                </div>
+                                <div>
+                                    <p class="text-sm text-gray-500">Data de Cadastro</p>
+                                    <p class="font-medium">${client.dataCriacao.toLocaleDateString('pt-BR')}</p>
+                                </div>
+                            </div>
+                            
+                            <div class="mt-6">
+                                <h4 class="text-lg font-semibold mb-4">Ações</h4>
+                                <div class="flex space-x-2">
+                                    <button class="bg-blue-600 text-white px-4 py-2 rounded-md hover:bg-blue-700">
+                                        <i class="fas fa-phone mr-2"></i> Ligar
+                                    </button>
+                                    <button class="bg-green-600 text-white px-4 py-2 rounded-md hover:bg-green-700">
+                                        <i class="fab fa-whatsapp mr-2"></i> WhatsApp
+                                    </button>
+                                    <button class="bg-purple-600 text-white px-4 py-2 rounded-md hover:bg-purple-700">
+                                        <i class="fas fa-edit mr-2"></i> Editar
+                                    </button>
+                                </div>
+                            </div>
+                        </div>
+                        
+                        <div>
+                            <h4 class="text-lg font-semibold mb-4">Empréstimos</h4>
+                            ${client.emprestimos.length > 0 ? `
+                                <div class="bg-gray-50 p-4 rounded-lg mb-6">
+                                    <div class="flex justify-between items-center mb-2">
+                                        <span class="font-medium">Empréstimo #${client.emprestimos[0].id}</span>
+                                        <span class="px-2 py-1 text-xs rounded-full bg-green-100 text-green-800">Aprovado</span>
+                                    </div>
+                                    <div class="grid grid-cols-2 gap-2 text-sm">
+                                        <div>
+                                            <p class="text-gray-500">Valor</p>
+                                            <p class="font-medium">R$ ${client.emprestimos[0].valor.toLocaleString()}</p>
+                                        </div>
+                                        <div>
+                                            <p class="text-gray-500">Parcelas</p>
+                                            <p class="font-medium">${client.emprestimos[0].parcelas}x</p>
+                                        </div>
+                                        <div>
+                                            <p class="text-gray-500">Taxa de Juros</p>
+                                            <p class="font-medium">${client.emprestimos[0].taxaJuros}% a.m.</p>
+                                        </div>
+                                        <div>
+                                            <p class="text-gray-500">Data de Solicitação</p>
+                                            <p class="font-medium">${client.emprestimos[0].dataSolicitacao.toLocaleDateString('pt-BR')}</p>
+                                        </div>
+                                    </div>
+                                </div>
+                            ` : `
+                                <p class="text-gray-500">Nenhum empréstimo encontrado.</p>
+                            `}
+                            
+                            <h4 class="text-lg font-semibold mb-4">Histórico</h4>
+                            <div class="space-y-4">
+                                ${client.historico.map(item => `
+                                    <div class="flex items-start space-x-3">
+                                        <div class="bg-gray-100 p-2 rounded-full">
+                                            <i class="fas fa-${getHistoryIcon(item.tipo)} text-gray-600"></i>
+                                        </div>
+                                        <div>
+                                            <p class="text-sm">${item.descricao}</p>
+                                            <p class="text-xs text-gray-500">${item.data.toLocaleDateString('pt-BR')} às ${item.data.toLocaleTimeString('pt-BR', { hour: '2-digit', minute: '2-digit' })}</p>
+                                        </div>
+                                    </div>
+                                `).join('')}
+                            </div>
+                        </div>
+                    </div>
+                `;
+            }, 1000);
+        };
+        
+        // Hide client details
+        window.hideClientDetails = function() {
+            const modal = document.getElementById('clientDetailsModal');
+            modal.classList.add('hidden');
+        };
+        
+        // Get history icon
+        function getHistoryIcon(tipo) {
+            const icons = {
+                'cadastro': 'user-plus',
+                'contato': 'phone',
+                'proposta': 'file-alt',
+                'emprestimo': 'money-bill-wave',
+                'aprovacao': 'check-circle'
+            };
+            
+            return icons[tipo] || 'history';
+        }
+        
+        // Document ready
+        document.addEventListener('DOMContentLoaded', function() {
+            // Initialize dropdowns
+            initDropdowns();
+            
+            // Initialize auth state listener
+            initAuth();
+            
+            // Initialize funnel chart (empty for now)
+            initFunnelChart();
+            
+            // Initialize performance chart
+            initPerformanceChart();
+        });
+
+        // Initialize dropdown menus
+        function initDropdowns() {
+            const dropdowns = document.querySelectorAll('.dropdown');
+            dropdowns.forEach(dropdown => {
+                dropdown.addEventListener('click', function(e) {
+                    e.stopPropagation();
+                    const menu = this.querySelector('.dropdown-menu');
+                    menu.classList.toggle('hidden');
+                });
+            });
+
+            // Close dropdowns when clicking outside
+            document.addEventListener('click', function() {
+                document.querySelectorAll('.dropdown-menu').forEach(menu => {
+                    menu.classList.add('hidden');
+                });
+            });
+        }
+
+        // Initialize Firebase auth state listener
+        function initAuth() {
+            onAuthStateChanged(auth, async (user) => {
+                if (user) {
+                    currentUser = user;
+                    await loadUserData(user.uid);
+                    checkAdminAccess();
+                    
+                    // Load dashboard data after authentication
+                    loadDashboardData();
+                } else {
+                    // Redirect to login page if not authenticated
+                    window.location.href = 'login.html';
+                }
+            });
+        }
+
+        // Load user data using the backend Cloud Function
+        async function loadUserData(userId) {
+            try {
+                // Chame a Cloud Function 'obterPerfilUsuario'
+                const obterPerfilUsuario = httpsCallable(functions, 'obterPerfilUsuario');
+                const result = await obterPerfilUsuario();
+
+                // A Cloud Function retorna os dados do usuário na propriedade 'data' do resultado
+                if (result.data && result.data.perfil) {
+                    currentUserData = result.data;
+                    updateUserUI();
+                    checkAdminAccess(); // Verifique o acesso Admin APÓS carregar os dados
+                } else {
+                    console.error('Cloud Function obterPerfilUsuario não retornou dados válidos.');
+                    logout();
+                }
+            } catch (error) {
+                console.error('Erro ao carregar dados do usuário via Cloud Function:', error);
+                logout();
+            }
+        }
+
+        // Update UI with user data
+        function updateUserUI() {
+            if (!currentUserData) return;
+
+            // Set user name and role
+            document.getElementById('userName').textContent = currentUserData.nome;
+            document.getElementById('userRole').textContent = currentUserData.perfil;
+            document.getElementById('headerUserName').textContent = currentUserData.nome;
+
+            // Set random avatar (in a real app, you'd use the user's actual photo)
+            const avatarUrl = `https://randomuser.me/api/portraits/${currentUserData.genero === 'F' ? 'women' : 'men'}/${Math.floor(Math.random() * 50)}.jpg`;
+            document.getElementById('userAvatar').src = avatarUrl;
+            document.getElementById('headerUserAvatar').src = avatarUrl;
+        }
+
+        // Check if user has admin access
+        function checkAdminAccess() {
+            if (currentUserData && currentUserData.perfil === 'admin') {
+                document.getElementById('adminSettings').classList.remove('hidden');
+                document.getElementById('adminSettingsDropdown').classList.remove('hidden');
+            }
+        }
+
+        // Initialize funnel chart
+        function initFunnelChart() {
+            const funnelCtx = document.getElementById('funnelChart').getContext('2d');
+            funnelChart = new Chart(funnelCtx, {
+                type: 'bar',
+                data: {
+                    labels: ['Oportunidade', 'Contato Inicial', 'Proposta', 'Negociação', 'Fechado'],
+                    datasets: [{
+                        label: 'Clientes',
+                        data: [0, 0, 0, 0, 0],
+                        backgroundColor: [
+                            'rgba(59, 130, 246, 0.7)',
+                            'rgba(16, 185, 129, 0.7)',
+                            'rgba(245, 158, 11, 0.7)',
+                            'rgba(139, 92, 246, 0.7)',
+                            'rgba(239, 68, 68, 0.7)'
+                        ],
+                        borderColor: [
+                            'rgba(59, 130, 246, 1)',
+                            'rgba(16, 185, 129, 1)',
+                            'rgba(245, 158, 11, 1)',
+                            'rgba(139, 92, 246, 1)',
+                            'rgba(239, 68, 68, 1)'
+                        ],
+                        borderWidth: 1
+                    }]
+                },
+                options: {
+                    responsive: true,
+                    maintainAspectRatio: false,
+                    scales: {
+                        y: {
+                            beginAtZero: true
+                        }
+                    },
+                    plugins: {
+                        legend: {
+                            display: false
+                        }
+                    }
+                }
+            });
+        }
+
+        // Initialize performance chart
+        function initPerformanceChart() {
+            const performanceCtx = document.getElementById('performanceChart').getContext('2d');
+            performanceChart = new Chart(performanceCtx, {
+                type: 'line',
+                data: {
+                    labels: [],
+                    datasets: [{
+                        label: 'Empréstimos (R$)',
+                        data: [],
+                        borderColor: 'rgba(59, 130, 246, 1)',
+                        backgroundColor: 'rgba(59, 130, 246, 0.1)',
+                        fill: true,
+                        tension: 0.4
+                    }]
+                },
+                options: {
+                    responsive: true,
+                    maintainAspectRatio: false,
+                    scales: {
+                        y: {
+                            beginAtZero: true,
+                            ticks: {
+                                callback: function(value) {
+                                    return 'R$ ' + value.toLocaleString();
+                                }
+                            }
+                        }
+                    }
+                }
+            });
+        }
+
+        // Load dashboard data
+        async function loadDashboardData() {
+            try {
+                // Load stats
+                await loadStats();
+                
+                // Load funnel data
+                await loadFunnelData();
+                
+                // Load recent activity
+                await loadRecentActivity();
+                
+                // Load recent clients
+                await loadRecentClients();
+                
+                // Load performance data
+                await loadPerformanceData();
+                
+            } catch (error) {
+                console.error('Error loading dashboard data:', error);
+            }
+        }
+
+        // Load stats (clients, loans, etc.)
+        async function loadStats() {
+            try {
+                // Call the backend function to get dashboard metrics
+                const getDashboardMetrics = httpsCallable(functions, 'obterMetricasDashboard');
+                const result = await getDashboardMetrics();
+                
+                if (result.data) {
+                    const metrics = result.data;
+                    
+                    // Update UI with real data
+                    document.getElementById('activeClientsCount').textContent = metrics.clientesAtivos.toLocaleString();
+                    document.getElementById('clientsGrowth').textContent = `${metrics.crescimentoClientes > 0 ? '+' : ''}${metrics.crescimentoClientes}% este mês`;
+                    document.getElementById('clientsGrowth').className = `text-sm ${metrics.crescimentoClientes >= 0 ? 'text-green-500' : 'text-red-500'}`;
+                    
+                    document.getElementById('activeLoansCount').textContent = metrics.emprestimosAtivos.toLocaleString();
+                    document.getElementById('loansGrowth').textContent = `${metrics.crescimentoEmprestimos > 0 ? '+' : ''}${metrics.crescimentoEmprestimos}% este mês`;
+                    document.getElementById('loansGrowth').className = `text-sm ${metrics.crescimentoEmprestimos >= 0 ? 'text-green-500' : 'text-red-500'}`;
+                    
+                    document.getElementById('totalLoansValue').textContent = `R$ ${(metrics.valorTotal / 1000000).toFixed(1)}M`;
+                    document.getElementById('valueGrowth').textContent = `${metrics.crescimentoValor > 0 ? '+' : ''}${metrics.crescimentoValor}% este mês`;
+                    document.getElementById('valueGrowth').className = `text-sm ${metrics.crescimentoValor >= 0 ? 'text-green-500' : 'text-red-500'}`;
+                    
+                    document.getElementById('conversionRate').textContent = `${metrics.taxaConversao}%`;
+                    document.getElementById('conversionChange').textContent = `${metrics.mudancaConversao > 0 ? '+' : ''}${metrics.mudancaConversao}% este mês`;
+                    document.getElementById('conversionChange').className = `text-sm ${metrics.mudancaConversao >= 0 ? 'text-green-500' : 'text-red-500'}`;
+                }
+            } catch (error) {
+                console.error('Error loading stats:', error);
+                
+                // Remove fallback to mock data to enforce real data usage
+                // Show error message to user
+                document.getElementById('activeClientsCount').textContent = 'Erro';
+                document.getElementById('clientsGrowth').textContent = 'Erro ao carregar dados';
+                document.getElementById('activeLoansCount').textContent = 'Erro';
+                document.getElementById('loansGrowth').textContent = 'Erro ao carregar dados';
+                document.getElementById('totalLoansValue').textContent = 'Erro';
+                document.getElementById('valueGrowth').textContent = 'Erro ao carregar dados';
+                document.getElementById('conversionRate').textContent = 'Erro';
+                document.getElementById('conversionChange').textContent = 'Erro ao carregar dados';
+            }
+        }
+
+        // Load funnel data
+        async function loadFunnelData() {
+            const period = document.getElementById('funnelPeriod').value;
+            
+            try {
+                // Call the backend function to get funnel data
+                const listarClientesPorEtapa = httpsCallable(functions, 'listarClientesPorEtapa');
+                
+                // Get counts for each funnel stage
+                const oportunidadeResult = await listarClientesPorEtapa({ etapa: 'oportunidade', limite: 1 });
+                const contatoInicialResult = await listarClientesPorEtapa({ etapa: 'contato_inicial', limite: 1 });
+                const propostaEnviadaResult = await listarClientesPorEtapa({ etapa: 'proposta_enviada', limite: 1 });
+                const negociacaoResult = await listarClientesPorEtapa({ etapa: 'negociacao', limite: 1 });
+                const fechadoGanhoResult = await listarClientesPorEtapa({ etapa: 'fechado_ganho', limite: 1 });
+                const fechadoPerdidoResult = await listarClientesPorEtapa({ etapa: 'fechado_perdido', limite: 1 });
+                
+                // Obtenha as contagens da meta.total retornada pela Cloud Function
+                const counts = [
+                    oportunidadeResult.data.meta.total || 0,
+                    contatoInicialResult.data.meta.total || 0,
+                    propostaEnviadaResult.data.meta.total || 0,
+                    negociacaoResult.data.meta.total || 0,
+                    // Some os "Fechado Ganho" e "Fechado Perdido" para o total "Fechado"
+                    (fechadoGanhoResult.data.meta.total || 0) + (fechadoPerdidoResult.data.meta.total || 0)
+                ];
+                
+                // Atualize os elementos HTML com as contagens reais
+                document.getElementById('funnelCount1').textContent = counts[0];
+                document.getElementById('funnelCount2').textContent = counts[1];
+                document.getElementById('funnelCount3').textContent = counts[2];
+                document.getElementById('funnelCount4').textContent = counts[3];
+                document.getElementById('funnelCount5').textContent = counts[4]; // Total Fechado
+                
+                // Atualize o gráfico
+                funnelChart.data.datasets[0].data = counts;
+                funnelChart.update();
+                
+                // Mantenha a lógica de highlight (se aplicável)
+                highlightFunnelStep(1); // Ou destaque a etapa com mais clientes, etc.
+                
+            } catch (error) {
+                console.error('Error loading funnel data:', error);
+                
+                // Fallback to mock data if API call fails
+                const funnelData = {
+                    '7': [120, 85, 60, 35, 18],
+                    '30': [320, 210, 150, 90, 45],
+                    '90': [950, 620, 420, 250, 130]
+                };
+                
+                const counts = funnelData[period] || funnelData['30'];
+                
+                // Update funnel step counts
+                document.getElementById('funnelCount1').textContent = counts[0];
+                document.getElementById('funnelCount2').textContent = counts[1];
+                document.getElementById('funnelCount3').textContent = counts[2];
+                document.getElementById('funnelCount4').textContent = counts[3];
+                document.getElementById('funnelCount5').textContent = counts[4];
+                
+                // Update chart
+                funnelChart.data.datasets[0].data = counts;
+                funnelChart.update();
+                
+                // Highlight active step (first step by default)
+                highlightFunnelStep(1);
+            }
+        }
+
+        // Highlight a specific funnel step
+        function highlightFunnelStep(stepNumber) {
+            // Reset all steps
+            for (let i = 1; i <= 5; i++) {
+                const step = document.getElementById(`funnelStep${i}`);
+                step.classList.remove('active', 'bg-blue-500', 'text-white');
+                step.classList.add('bg-gray-100');
+            }
+            
+            // Highlight the selected step
+            const activeStep = document.getElementById(`funnelStep${stepNumber}`);
+            activeStep.classList.add('active', 'bg-blue-500', 'text-white');
+            activeStep.classList.remove('bg-gray-100');
+        }
+
+        // Load recent activity
+        async function loadRecentActivity() {
+            try {
+                // Call backend function to get recent activities
+                // TODO: Implement backend function for recent activities
+                const activities = [];
+                
+                // Show message that this feature needs backend implementation
+                const container = document.getElementById('recentActivity');
+                container.innerHTML = '<p class="text-gray-500 text-center">Funcionalidade de atividades recentes requer implementação no backend</p>';
+                return;
+                
+            } catch (error) {
+                console.error('Error loading recent activity:', error);
+            }
+        }
+
+        // Load recent clients
+        async function loadRecentClients() {
+            try {
+                // Call the backend function to get recent clients
+                const listarClientes = httpsCallable(functions, 'listarClientesNovaPaginacao');
+                const result = await listarClientes({ limite: 5 });
+                
+                // Get clients from result
+                const clients = result.data && result.data.data ? result.data.data : [];
+                
+                // Update UI
+                const container = document.getElementById('recentClientsList');
+                container.innerHTML = '';
+                
+                if (clients.length === 0) {
+                    const row = document.createElement('tr');
+                    row.innerHTML = `
+                        <td colspan="4" class="px-6 py-4 text-center text-gray-500">
+                            Nenhum cliente recente encontrado.
+                        </td>
+                    `;
+                    container.appendChild(row);
+                    return;
+                }
+                
+                clients.forEach(client => {
+                    const row = document.createElement('tr');
+                    
+                    // Convert Firestore timestamps to Date objects
+                    const dataCriacao = client.dataCriacao ? new Date(client.dataCriacao.seconds * 1000) : null;
+                    const ultimaAtualizacao = client.ultimaAtualizacaoPrazo ? new Date(client.ultimaAtualizacaoPrazo.seconds * 1000) : null;
+                    
+                    row.innerHTML = `
+                        <td class="px-6 py-4 whitespace-nowrap">
+                            <div class="flex items-center">
+                                <div class="flex-shrink-0 h-10 w-10">
+                                    <img class="h-10 w-10 rounded-full" src="https://randomuser.me/api/portraits/${client.genero === 'F' ? 'women' : 'men'}/${Math.floor(Math.random() * 50)}.jpg" alt="">
+                                </div>
+                                <div class="ml-4">
+                                    <div class="text-sm font-medium text-gray-900">${client.nomeCompleto}</div>
+                                    <div class="text-sm text-gray-500">${client.telefone || 'Sem telefone'}</div>
+                                </div>
+                            </div>
+                        </td>
+                        <td class="px-6 py-4 whitespace-nowrap">
+                            ${getFunnelStepBadge(client.etapaFunil)}
+                        </td>
+                        <td class="px-6 py-4 whitespace-nowrap text-sm text-gray-500">
+                            ${formatDate(ultimaAtualizacao || dataCriacao)}
+                        </td>
+                        <td class="px-6 py-4 whitespace-nowrap text-sm font-medium">
+                            <button class="text-blue-600 hover:text-blue-900 mr-3" title="Ligar para ${client.nomeCompleto}" ${client.telefone ? `onclick="window.location.href = 'tel:${client.telefone.replace(/\D/g, '')}'"` : 'disabled'}><i class="fas fa-phone"></i></button>
+                            <button class="text-green-600 hover:text-green-900 mr-3" title="Enviar WhatsApp para ${client.nomeCompleto}" ${client.telefoneWhatsapp ? `onclick="window.open('https://wa.me/${client.telefoneWhatsapp.replace(/\D/g, '')}', '_blank')"` : 'disabled'}><i class="fab fa-whatsapp"></i></button>
+                            <button onclick="showClientDetails('${client.id}')" class="text-purple-600 hover:text-purple-900" title="Ver detalhes de ${client.nomeCompleto}"><i class="fas fa-ellipsis-v"></i></button>
+                        </td>
+                    `;
+                    container.appendChild(row);
+                });
+            } catch (error) {
+                console.error('Error loading recent clients:', error);
+                
+                // Show error message instead of fallback to mock data
+                const errorContainer = document.getElementById('recentClientsList');
+                errorContainer.innerHTML = `
+                    <tr>
+                        <td colspan="4" class="px-6 py-4 text-center text-red-500">
+                            Erro ao carregar clientes recentes
+                        </td>
+                    </tr>
+                `;
+            }
+        }
+
+        // Get funnel step badge HTML
+        function getFunnelStepBadge(etapa) {
+            const steps = {
+                'oportunidade': { text: 'Oportunidade', color: 'blue' },
+                'contato_inicial': { text: 'Contato Inicial', color: 'green' },
+                'proposta_enviada': { text: 'Proposta Enviada', color: 'yellow' },
+                'negociacao': { text: 'Negociação', color: 'purple' },
+                'fechado_ganho': { text: 'Fechado Ganho', color: 'green' },
+                'fechado_perdido': { text: 'Fechado Perdido', color: 'red' }
+            };
+            
+            const step = steps[etapa] || { text: etapa, color: 'gray' };
+            return `<span class="px-2 inline-flex text-xs leading-5 font-semibold rounded-full bg-${step.color}-100 text-${step.color}-800">${step.text}</span>`;
+        }
+
+        // Format date for display
+        function formatDate(date) {
+            if (!date) return 'N/A';
+            
+            const now = new Date();
+            const diffDays = Math.floor((now - date) / (1000 * 60 * 60 * 24));
+            
+            if (diffDays === 0) {
+                return 'Hoje, ' + date.toLocaleTimeString('pt-BR', { hour: '2-digit', minute: '2-digit' });
+            } else if (diffDays === 1) {
+                return 'Ontem, ' + date.toLocaleTimeString('pt-BR', { hour: '2-digit', minute: '2-digit' });
+            } else {
+                return `${diffDays} dias atrás`;
+            }
+        }
+
+        // Load performance data
+        async function loadPerformanceData() {
+            const period = document.getElementById('performancePeriod').value;
+            
+            try {
+                // Call backend function to get performance data
+                // TODO: Implement backend function for performance data
+                console.log('Performance data needs backend implementation for period:', period);
+                
+                // Show placeholder message
+                document.getElementById('monthlyGoal').textContent = 'Dados não disponíveis';
+                document.getElementById('currentProgress').textContent = 'Requer implementação no backend';
+                document.getElementById('daysRemaining').textContent = 'N/A';
+                
+                // Clear chart
+                if (typeof performanceChart !== 'undefined') {
+                    performanceChart.data.labels = [];
+                    performanceChart.data.datasets[0].data = [];
+                    performanceChart.update();
+                }
+            } catch (error) {
+                console.error('Error loading performance data:', error);
+            }
+        }
+
+        // Load dashboard metrics from backend
+        async function loadDashboardMetrics() {
+            try {
+                const obterMetricasDashboard = httpsCallable(functions, 'obterMetricasDashboard');
+                const result = await obterMetricasDashboard();
+                const data = result.data;
+
+                document.getElementById('activeClientsCount').textContent = data.clientesAtivos;
+                document.getElementById('activeLoansCount').textContent = data.emprestimosAtivos;
+                document.getElementById('totalLoansValue').textContent = `R$ ${data.valorTotalEmprestado.toLocaleString('pt-BR', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}`;
+                document.getElementById('conversionRate').textContent = `${data.taxaConversao}%`;
+            } catch (error) {
+                console.error('Erro ao carregar métricas do dashboard:', error);
+            }
+        }
+
+        // Inicializar dados ao carregar a página
+        window.addEventListener('load', () => {
+            loadDashboardMetrics();
+            loadPerformanceData();
+            loadFunnelData();
+            loadRecentActivity();
+            loadRecentClients();
+            // Outras funções de inicialização podem ser chamadas aqui
+        });
+    </script>
+    <script type="module">
+        // Marca o item ativo da sidebar baseado na URL (simulação)
+        function setActiveNavItem() {
+            const navItems = document.querySelectorAll('.nav-item');
+            navItems.forEach(item => {
+                item.classList.remove('active');
+            });
+            // Exemplo: marcar o primeiro item como ativo (Dashboard)
+            if (navItems.length > 0) {
+                navItems[0].classList.add('active');
+            }
+        }
+
+        // Atualiza o botão de recolher sidebar para alternar ícone e texto
+        function updateSidebarToggleButton() {
+            const sidebar = document.querySelector('.sidebar');
+            const icon = document.getElementById('sidebarToggleIcon');
+            const text = document.getElementById('sidebarToggleText');
+
+            if (sidebar.classList.contains('collapsed')) {
+                icon.classList.remove('fa-chevron-left');
+                icon.classList.add('fa-chevron-right');
+                text.textContent = 'Expandir';
+            } else {
+                icon.classList.remove('fa-chevron-right');
+                icon.classList.add('fa-chevron-left');
+                text.textContent = 'Recolher';
+            }
+        }
+
+        // Modifica a função toggleSidebar para atualizar o botão
+        window.toggleSidebar = function() {
+            const sidebar = document.querySelector('.sidebar');
+            const content = document.querySelector('.content');
+
+            sidebar.classList.toggle('collapsed');
+
+            if (sidebar.classList.contains('collapsed')) {
+                content.style.marginLeft = '70px';
+            } else {
+                content.style.marginLeft = '16rem';
+            }
+
+            updateSidebarToggleButton();
+        };
+
+        // Inicialização
+        window.addEventListener('load', () => {
+            setActiveNavItem();
+            updateSidebarToggleButton();
+        });
+    </script>
+</body>
+</html>

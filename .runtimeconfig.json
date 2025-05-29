@@ -1,0 +1,12 @@
+{
+  "usuario_master": {
+    "perfil": "admin",
+    "email": "marcos.sen@hotmail.com",
+    "nome": "Marcos"
+  },
+  "app": {
+    "limite_paginacao_padrao": "20",
+    "limite_batch_operacoes": "450",
+    "taxa_juros_padrao": "0.016"
+  }
+}

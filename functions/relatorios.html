@@ -1,0 +1,83 @@
+<!DOCTYPE html>
+<html lang="pt-BR">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Relatórios - CRM Souzacred</title>
+    <script src="https://cdn.tailwindcss.com"></script>
+    <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.4.0/css/all.min.css">
+</head>
+<body class="bg-gray-100 min-h-screen">
+    <nav class="bg-blue-700 p-4 flex items-center justify-between">
+        <a href="index.html" class="text-white font-bold text-xl">CRM Souzacred</a>
+        <a href="index.html" class="text-white hover:underline">Dashboard</a>
+    </nav>
+    <main class="p-6 max-w-6xl mx-auto">
+        <h1 class="text-2xl font-bold mb-6 text-blue-700">Relatórios</h1>
+        <div class="mb-4">
+            <label class="font-semibold mr-2">Tipo de Relatório:</label>
+            <select id="reportType" class="border rounded px-2 py-1">
+                <option value="clientes">Clientes</option>
+                <option value="emprestimos">Empréstimos</option>
+                <option value="funil">Funil de Vendas</option>
+            </select>
+            <button id="loadReport" class="ml-4 bg-blue-600 text-white px-4 py-2 rounded hover:bg-blue-700">Gerar Relatório</button>
+        </div>
+        <div id="reportTable" class="bg-white rounded shadow p-4 overflow-x-auto"></div>
+    </main>
+    <script type="module">
+        import { initializeApp } from "https://www.gstatic.com/firebasejs/9.22.0/firebase-app.js";
+        import { getAuth, onAuthStateChanged } from "https://www.gstatic.com/firebasejs/9.22.0/firebase-auth.js";
+        import { getFunctions, httpsCallable } from "https://www.gstatic.com/firebasejs/9.22.0/firebase-functions.js";
+
+        const firebaseConfig = {
+            apiKey: "YOAIzaSyCuaL09kIovFZ-WTzZg1MPllIBl1diCx7c",
+            authDomain: "crm-com-api.firebaseapp.com",
+            projectId: "crm-com-api",
+            storageBucket: "crm-com-api.firebasestorage.app",
+            messagingSenderId: "63819170275",
+            appId: "1:63819170275:web:b0d9e21d2352fd3a8260d6",
+            measurementId: "G-KQZ2J7WN21"
+        };
+
+        const app = initializeApp(firebaseConfig);
+        const auth = getAuth(app);
+        const functions = getFunctions(app);
+
+        onAuthStateChanged(auth, user => {
+            if (!user) window.location.href = 'login.html';
+        });
+
+        document.getElementById('loadReport').addEventListener('click', async () => {
+            const type = document.getElementById('reportType').value;
+            const table = document.getElementById('reportTable');
+            table.innerHTML = '<div class="text-gray-400 text-center py-2">Carregando...</div>';
+            try {
+                let fn;
+                if (type === 'clientes') fn = httpsCallable(functions, 'relatorioClientes');
+                else if (type === 'emprestimos') fn = httpsCallable(functions, 'relatorioEmprestimos');
+                else fn = httpsCallable(functions, 'relatorioFunil');
+                const result = await fn();
+                const rows = result.data && result.data.rows ? result.data.rows : [];
+                const headers = result.data && result.data.headers ? result.data.headers : [];
+                if (rows.length === 0) {
+                    table.innerHTML = '<div class="text-gray-400 text-center py-2">Nenhum dado encontrado</div>';
+                    return;
+                }
+                let html = '<table class="min-w-full text-sm"><thead><tr>';
+                headers.forEach(h => html += `<th class="px-4 py-2 border-b">${h}</th>`);
+                html += '</tr></thead><tbody>';
+                rows.forEach(row => {
+                    html += '<tr>';
+                    row.forEach(cell => html += `<td class="px-4 py-2 border-b">${cell}</td>`);
+                    html += '</tr>';
+                });
+                html += '</tbody></table>';
+                table.innerHTML = html;
+            } catch (err) {
+                table.innerHTML = '<div class="text-red-500 text-center py-2">Erro ao gerar relatório</div>';
+            }
+        });
+    </script>
+</body>
+</html>

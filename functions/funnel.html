@@ -1,0 +1,165 @@
+<!DOCTYPE html>
+<html lang="pt-BR">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Funil de Vendas - CRM Souzacred</title>
+    <script src="https://cdn.tailwindcss.com"></script>
+    <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.4.0/css/all.min.css">
+    <style>
+        .kanban-col {
+            min-width: 280px;
+            max-width: 340px;
+            background: #f3f4f6;
+            border-radius: 0.5rem;
+            padding: 1rem;
+            margin-right: 1rem;
+            flex: 1 1 0;
+        }
+        .kanban-card {
+            background: #fff;
+            border-radius: 0.375rem;
+            box-shadow: 0 1px 2px rgba(0,0,0,0.05);
+            margin-bottom: 1rem;
+            padding: 1rem;
+            cursor: grab;
+            transition: box-shadow 0.2s;
+        }
+        .kanban-card.dragging {
+            opacity: 0.5;
+            box-shadow: 0 4px 12px rgba(0,0,0,0.15);
+        }
+        .kanban-col.drag-over {
+            background: #dbeafe;
+        }
+    </style>
+</head>
+<body class="bg-gray-100 min-h-screen">
+    <nav class="bg-blue-700 p-4 flex items-center justify-between">
+        <a href="index.html" class="text-white font-bold text-xl">CRM Souzacred</a>
+        <a href="index.html" class="text-white hover:underline">Dashboard</a>
+    </nav>
+    <main class="p-6">
+        <h1 class="text-2xl font-bold mb-6 text-blue-700">Funil de Vendas</h1>
+        <div id="kanban" class="flex overflow-x-auto pb-4">
+            <!-- Colunas do funil serão inseridas aqui via JS -->
+        </div>
+    </main>
+    <script type="module">
+        import { initializeApp } from "https://www.gstatic.com/firebasejs/9.22.0/firebase-app.js";
+        import { getAuth, onAuthStateChanged } from "https://www.gstatic.com/firebasejs/9.22.0/firebase-auth.js";
+        import { getFunctions, httpsCallable } from "https://www.gstatic.com/firebasejs/9.22.0/firebase-functions.js";
+
+        const firebaseConfig = {
+            apiKey: "YOAIzaSyCuaL09kIovFZ-WTzZg1MPllIBl1diCx7c",
+            authDomain: "crm-com-api.firebaseapp.com",
+            projectId: "crm-com-api",
+            storageBucket: "crm-com-api.firebasestorage.app",
+            messagingSenderId: "63819170275",
+            appId: "1:63819170275:web:b0d9e21d2352fd3a8260d6",
+            measurementId: "G-KQZ2J7WN21"
+        };
+
+        const app = initializeApp(firebaseConfig);
+        const auth = getAuth(app);
+        const functions = getFunctions(app);
+
+        const ETAPAS = [
+            { key: 'oportunidade', label: 'Oportunidade', color: 'bg-blue-200' },
+            { key: 'contato_inicial', label: 'Contato Inicial', color: 'bg-yellow-200' },
+            { key: 'proposta_enviada', label: 'Proposta Enviada', color: 'bg-purple-200' },
+            { key: 'negociacao', label: 'Negociação', color: 'bg-orange-200' },
+            { key: 'fechado_ganho', label: 'Fechado Ganho', color: 'bg-green-200' },
+            { key: 'fechado_perdido', label: 'Fechado Perdido', color: 'bg-red-200' }
+        ];
+
+        let currentUser = null;
+        let dragCard = null;
+        let dragFrom = null;
+
+        onAuthStateChanged(auth, user => {
+            if (!user) {
+                window.location.href = 'login.html';
+            } else {
+                currentUser = user;
+                renderKanban();
+            }
+        });
+
+        async function renderKanban() {
+            const kanban = document.getElementById('kanban');
+            kanban.innerHTML = '';
+            for (const etapa of ETAPAS) {
+                const col = document.createElement('div');
+                col.className = `kanban-col flex-shrink-0 ${etapa.color}`;
+                col.dataset.etapa = etapa.key;
+                col.innerHTML = `<h2 class="font-bold text-lg mb-4">${etapa.label}</h2>
+                    <div class="kanban-cards min-h-[40px]" id="col-${etapa.key}"></div>`;
+                col.addEventListener('dragover', e => {
+                    e.preventDefault();
+                    col.classList.add('drag-over');
+                });
+                col.addEventListener('dragleave', () => col.classList.remove('drag-over'));
+                col.addEventListener('drop', e => {
+                    e.preventDefault();
+                    col.classList.remove('drag-over');
+                    if (dragCard && dragFrom !== etapa.key) {
+                        moveClient(dragCard.dataset.id, dragFrom, etapa.key);
+                    }
+                });
+                kanban.appendChild(col);
+                await loadClientsForEtapa(etapa.key);
+            }
+        }
+
+        async function loadClientsForEtapa(etapa) {
+            const listarClientesPorEtapa = httpsCallable(functions, 'listarClientesPorEtapa');
+            const col = document.getElementById(`col-${etapa}`);
+            col.innerHTML = '<div class="text-gray-400 text-sm text-center py-2">Carregando...</div>';
+            try {
+                const result = await listarClientesPorEtapa({ etapaFunil: etapa, limite: 100 });
+                const clients = result.data && result.data.data ? result.data.data : [];
+                col.innerHTML = '';
+                clients.forEach(client => {
+                    const card = document.createElement('div');
+                    card.className = 'kanban-card';
+                    card.draggable = true;
+                    card.dataset.id = client.id;
+                    card.innerHTML = `
+                        <div class="font-semibold text-gray-800">${client.nomeCompleto || 'Sem nome'}</div>
+                        <div class="text-xs text-gray-500">${client.telefone || ''}</div>
+                        <div class="text-xs mt-1">${client.cpf || ''}</div>
+                    `;
+                    card.addEventListener('dragstart', () => {
+                        dragCard = card;
+                        dragFrom = etapa;
+                        card.classList.add('dragging');
+                    });
+                    card.addEventListener('dragend', () => {
+                        dragCard = null;
+                        dragFrom = null;
+                        card.classList.remove('dragging');
+                    });
+                    col.appendChild(card);
+                });
+                if (clients.length === 0) {
+                    col.innerHTML = '<div class="text-gray-400 text-sm text-center py-2">Nenhum cliente</div>';
+                }
+            } catch (err) {
+                col.innerHTML = '<div class="text-red-500 text-sm text-center py-2">Erro ao carregar clientes</div>';
+            }
+        }
+
+        async function moveClient(clientId, fromEtapa, toEtapa) {
+            if (!confirm('Mover cliente para "' + ETAPAS.find(e => e.key === toEtapa).label + '"?')) return;
+            const moverClienteNoFunil = httpsCallable(functions, 'moverClienteNoFunil');
+            try {
+                await moverClienteNoFunil({ clienteId: clientId, novaEtapa: toEtapa });
+                await renderKanban();
+            } catch (err) {
+                alert('Erro ao mover cliente: ' + (err.message || ''));
+            }
+        }
+    </script>
+</body>
+</html>

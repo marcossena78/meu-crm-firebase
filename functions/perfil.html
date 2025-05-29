@@ -1,0 +1,87 @@
+<!DOCTYPE html>
+<html lang="pt-BR">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Perfil do Usuário - CRM Souzacred</title>
+    <script src="https://cdn.tailwindcss.com"></script>
+    <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.4.0/css/all.min.css">
+</head>
+<body class="bg-gray-100 min-h-screen">
+    <nav class="bg-blue-700 p-4 flex items-center justify-between">
+        <a href="index.html" class="text-white font-bold text-xl">CRM Souzacred</a>
+        <a href="index.html" class="text-white hover:underline">Dashboard</a>
+    </nav>
+    <main class="p-6 max-w-xl mx-auto">
+        <h1 class="text-2xl font-bold mb-6 text-blue-700">Perfil do Usuário</h1>
+        <form id="perfilForm" class="bg-white p-6 rounded shadow space-y-4">
+            <div>
+                <label class="block font-semibold mb-1" for="nome">Nome</label>
+                <input type="text" id="nome" name="nome" class="w-full border rounded px-3 py-2" required>
+            </div>
+            <div>
+                <label class="block font-semibold mb-1" for="email">Email</label>
+                <input type="email" id="email" name="email" class="w-full border rounded px-3 py-2" disabled>
+            </div>
+            <div>
+                <label class="block font-semibold mb-1" for="senha">Nova Senha</label>
+                <input type="password" id="senha" name="senha" class="w-full border rounded px-3 py-2" placeholder="Deixe em branco para não alterar">
+            </div>
+            <button type="submit" class="bg-blue-600 text-white px-4 py-2 rounded hover:bg-blue-700">Salvar</button>
+            <div id="perfilMessage" class="mt-2 text-sm"></div>
+        </form>
+    </main>
+    <script type="module">
+        import { initializeApp } from "https://www.gstatic.com/firebasejs/9.22.0/firebase-app.js";
+        import { getAuth, onAuthStateChanged, updateProfile, updatePassword } from "https://www.gstatic.com/firebasejs/9.22.0/firebase-auth.js";
+        import { getFunctions, httpsCallable } from "https://www.gstatic.com/firebasejs/9.22.0/firebase-functions.js";
+
+        const firebaseConfig = {
+            apiKey: "YOAIzaSyCuaL09kIovFZ-WTzZg1MPllIBl1diCx7c",
+            authDomain: "crm-com-api.firebaseapp.com",
+            projectId: "crm-com-api",
+            storageBucket: "crm-com-api.firebasestorage.app",
+            messagingSenderId: "63819170275",
+            appId: "1:63819170275:web:b0d9e21d2352fd3a8260d6",
+            measurementId: "G-KQZ2J7WN21"
+        };
+
+        const app = initializeApp(firebaseConfig);
+        const auth = getAuth(app);
+        const functions = getFunctions(app);
+
+        let currentUser = null;
+
+        onAuthStateChanged(auth, async user => {
+            if (!user) {
+                window.location.href = 'login.html';
+            } else {
+                currentUser = user;
+                document.getElementById('nome').value = user.displayName || '';
+                document.getElementById('email').value = user.email || '';
+            }
+        });
+
+        document.getElementById('perfilForm').addEventListener('submit', async (e) => {
+            e.preventDefault();
+            const nome = document.getElementById('nome').value;
+            const senha = document.getElementById('senha').value;
+            const perfilMessage = document.getElementById('perfilMessage');
+            perfilMessage.textContent = '';
+            try {
+                if (nome && currentUser.displayName !== nome) {
+                    await updateProfile(currentUser, { displayName: nome });
+                }
+                if (senha) {
+                    await updatePassword(currentUser, senha);
+                }
+                perfilMessage.textContent = 'Perfil atualizado com sucesso!';
+                perfilMessage.className = 'mt-2 text-green-600 text-sm';
+            } catch (err) {
+                perfilMessage.textContent = 'Erro ao atualizar perfil: ' + (err.message || '');
+                perfilMessage.className = 'mt-2 text-red-600 text-sm';
+            }
+        });
+    </script>
+</body>
+</html>

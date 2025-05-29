@@ -1,0 +1,36 @@
+{
+    // Use IntelliSense to learn about possible attributes.
+    // Hover to view descriptions of existing attributes.
+    // For more information, visit: https://go.microsoft.com/fwlink/?linkid=830387
+    "version": "0.2.0",
+    "configurations": [
+        {
+            "name": "Attach to Firebase Functions", // Nome mais descritivo
+            "port": 9229,
+            "request": "attach",
+            "skipFiles": [
+                "<node_internals>/**"
+            ],
+            "type": "node",
+            "protocol": "inspector", // Especifica o protocolo (bom ter)
+            "restart": true, // Muito útil! Re-anexa o depurador se a função reiniciar
+            "localRoot": "${workspaceFolder}/functions", // Caminho local para o código das funções
+            "remoteRoot": "/srv" // Caminho onde o código das funções roda no emulador/nuvem (padrão)
+        }
+        // Se você tinha outras configurações úteis aqui (como a "Launch Program" original),
+        // pode deixá-las, mas certifique-se de que estejam dentro do array "configurations".
+        // Exemplo:
+        /*
+        , // Adicione uma vírgula se houver outra configuração após esta
+        {
+            "type": "node",
+            "request": "launch",
+            "name": "Launch Program (Ignorar para Functions)", // Renomeado para clareza
+            "skipFiles": [
+                "<node_internals>/**"
+            ],
+            "program": "${workspaceFolder}\\index.js"
+        }
+        */
+    ]
+}
